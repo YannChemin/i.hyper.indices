@@ -66,21 +66,21 @@ REFERENCES:   See individual index references in the source code.
 #%option G_OPT_R_INPUTS
 #% key: input
 #% description: Input raster bands (comma-separated list)
-#% required: yes
+#% required: no
 #%end
 
 #%option
 #% key: wavelengths
 #% type: string
 #% description: Wavelengths for input bands in nm (comma-separated, e.g., 450,550,670,800)
-#% required: yes
+#% required: no
 #%end
 
 #%option
 #% key: output_prefix
 #% type: string
 #% description: Prefix for output index rasters
-#% required: yes
+#% required: no
 #%end
 
 #%option
@@ -974,17 +974,17 @@ class HyperspectralIndices:
             theme='materials'
         )
             
-        def find_closest_band(self, wavelength_target, available_wavelengths):
-            """
-            Find the closest available wavelength to a target wavelength or range.
-            
-            This method handles both single wavelength targets and wavelength ranges,
-            finding the best match from the available bands.
-            
-            Args:
-                wavelength_target (float or tuple): Target wavelength in nm, or 
-                    (min_wavelength, max_wavelength) tuple for a range
-                available_wavelengths (list): List of available wavelengths in nm
+    def find_closest_band(self, wavelength_target, available_wavelengths):
+        """
+        Find the closest available wavelength to a target wavelength or range.
+        
+        This method handles both single wavelength targets and wavelength ranges,
+        finding the best match from the available bands.
+        
+        Args:
+            wavelength_target (float or tuple): Target wavelength in nm, or 
+                (min_wavelength, max_wavelength) tuple for a range
+            available_wavelengths (list): List of available wavelengths in nm
             
             Returns:
                 float: The closest available wavelength from the list
@@ -997,17 +997,17 @@ class HyperspectralIndices:
                 >>> indices.find_closest_band((760, 900), available)
                 850
             """
-            if isinstance(wavelength_target, tuple):
-                # Target is a range - find center point
-                target_center = (wavelength_target[0] + wavelength_target[1]) / 2
-            else:
-                target_center = wavelength_target
-            
-            closest = min(available_wavelengths, 
-                         key=lambda x: abs(x - target_center))
-            return closest
+        if isinstance(wavelength_target, tuple):
+            # Target is a range - find center point
+            target_center = (wavelength_target[0] + wavelength_target[1]) / 2
+        else:
+            target_center = wavelength_target
         
-        def can_calculate_index(self, index_name, available_wavelengths):
+        closest = min(available_wavelengths, 
+                     key=lambda x: abs(x - target_center))
+        return closest
+        
+    def can_calculate_index(self, index_name, available_wavelengths):
             """
             Check if an index can be calculated with the available bands.
             
@@ -1051,7 +1051,7 @@ class HyperspectralIndices:
             
             return True, "OK"
         
-        def get_band_mapping(self, index_name, wavelength_to_band):
+    def get_band_mapping(self, index_name, wavelength_to_band):
             """
             Get the mapping of required bands to actual raster names for an index.
             
@@ -1084,7 +1084,7 @@ class HyperspectralIndices:
             
             return mapping
         
-        def list_indices(self, theme=None):
+    def list_indices(self, theme=None):
             """
             List available indices, optionally filtered by theme.
             
@@ -1109,7 +1109,7 @@ class HyperspectralIndices:
             
             return indices_list
         
-        def get_themes(self):
+    def get_themes(self):
             """
             Get list of all available index themes.
             
@@ -1126,67 +1126,62 @@ class HyperspectralIndices:
             return sorted(themes)
 
 
-        def list_available_indices(indices_obj, detailed=False):
-            """
-            Print formatted list of available indices organized by theme.
-            
-            This function provides user-friendly output of all available indices,
-            grouped by thematic category. When detailed mode is enabled, it shows
-            complete information including required bands and references.
-            
-            Args:
-                indices_obj (HyperspectralIndices): Indices database object
-                detailed (bool): If True, show full details for each index
-            
-            Output:
-                Prints formatted index information to stdout via gs.message
-            
-            Examples:
-                >>> indices = HyperspectralIndices()
-                >>> list_available_indices(indices, detailed=False)
-                # Prints summary list
-                >>> list_available_indices(indices, detailed=True)
-                # Prints detailed information
-            """
-            themes = indices_obj.get_themes()
-            
-            gs.message("="*70)
-            gs.message("AVAILABLE SPECTRAL INDICES")
-            gs.message("="*70)
-            
-            for theme in themes:
-                theme_indices = indices_obj.list_indices(theme=theme)
-                gs.message(f"\n{theme.upper()} INDICES ({len(theme_indices)}):")
-                gs.message("-"*70)
-                
-                for idx in theme_indices:
-                    if detailed:
-                        gs.message(f"\n  {idx.name}: {idx.description}")
-                        gs.message(f"    Required bands: {idx.bands_required}")
-                        gs.message(f"    Reference: {idx.reference}")
-                    else:
-                        gs.message(f"  {idx.name:15s} - {idx.description}")
-            
-            gs.message("\n" + "="*70)
-            gs.message(f"Total indices available: {len(indices_obj.indices_db)}")
-            gs.message("="*70)
-
+        
 
 import grass.script as gs
 from grass.script import mapcalc
 from grass.script.core import run_command
 from grass.exceptions import CalledModuleError
 
+
+def list_available_indices(indices_obj, detailed=False):
+    """
+    Print formatted list of available indices organized by theme.
+    
+    This function provides user-friendly output of all available indices,
+    grouped by thematic category. When detailed mode is enabled, it shows
+    complete information including required bands and references.
+    
+    Args:
+        indices_obj (HyperspectralIndices): Indices database object
+        detailed (bool): If True, show full details for each index
+    
+    Output:
+        Prints formatted index information to stdout via gs.message
+    
+    Examples:
+        >>> indices = HyperspectralIndices()
+        >>> list_available_indices(indices, detailed=False)
+        # Prints summary list
+        >>> list_available_indices(indices, detailed=True)
+        # Prints detailed information
+    """
+    themes = indices_obj.get_themes()
+    
+    gs.message("="*70)
+    gs.message("AVAILABLE SPECTRAL INDICES")
+    gs.message("="*70)
+    
+    for theme in themes:
+        theme_indices = indices_obj.list_indices(theme=theme)
+        gs.message(f"\n{theme.upper()} INDICES ({len(theme_indices)}):")
+        gs.message("-"*70)
+        
+        for idx in theme_indices:
+            if detailed:
+                gs.message(f"\n  {idx.name}: {idx.description}")
+                gs.message(f"    Required bands: {idx.bands_required}")
+                gs.message(f"    Reference: {idx.reference}")
+            else:
+                gs.message(f"  {idx.name:15s} - {idx.description}")
+    
+    gs.message("\n" + "="*70)
+    gs.message(f"Total indices available: {len(indices_obj.indices_db)}")
+    gs.message("="*70)
+
 def main():
     # Parse command line - CRITICAL: missing in original
     options, flags = gs.parser()
-    
-    # Get command-line options
-    input_bands = options['input'].split(',')
-    wavelengths_str = options['wavelengths'].split(',')
-    output_prefix = options['output_prefix']
-    indices_str = options['indices']
-    theme = options['theme']
     
     # Initialize indices database
     indices_obj = HyperspectralIndices()
@@ -1195,6 +1190,24 @@ def main():
     if flags['l']:
         list_available_indices(indices_obj, detailed=flags['i'])
         return 0
+    
+    # Get command-line options
+    input_bands = options['input']
+    wavelengths_str = options['wavelengths']
+    output_prefix = options['output_prefix']
+    indices_str = options['indices']
+    theme = options['theme']
+    
+    # Validate required parameters for index calculation
+    if not input_bands:
+        gs.fatal(_("Required parameter <input> not set: (Input raster bands (comma-separated list))"))
+    if not wavelengths_str:
+        gs.fatal(_("Required parameter <wavelengths> not set: (Wavelengths for input bands in nm (comma-separated, e.g., 450,550,670,800))"))
+    if not output_prefix:
+        gs.fatal(_("Required parameter <output_prefix> not set: (Prefix for output index rasters)"))
+    
+    input_bands = input_bands.split(',')
+    wavelengths_str = wavelengths_str.split(',')
     
     # ====================================================================
     # INPUT VALIDATION
