@@ -1173,7 +1173,10 @@ def list_available_indices(indices_obj, detailed=False):
                 gs.message(f"    Required bands: {idx.bands_required}")
                 gs.message(f"    Reference: {idx.reference}")
             else:
+                # Format band requirements as a concise string
+                bands_str = ", ".join([f"{band}({rng[0]}-{rng[1]}nm)" for band, rng in idx.bands_required.items()])
                 gs.message(f"  {idx.name:15s} - {idx.description}")
+                gs.message(f"    Bands: {bands_str}")
     
     gs.message("\n" + "="*70)
     gs.message(f"Total indices available: {len(indices_obj.indices_db)}")
