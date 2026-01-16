@@ -1,0 +1,119 @@
+
+## i.hyper.indices.html
+```html
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+"http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<link rel="stylesheet" href="../style.css" type="text/css" >
+<title>i.hyper.indices</title>
+</head>
+<body>
+<h2>NAME</h2>
+i.hyper.indices - Calculates spectral indices from hyperspectral/multispectral imagery
+
+<h2>KEYWORDS</h2>
+imagery, indices, hyperspectral, vegetation, classification
+
+<h2>SYNOPSIS</h2>
+<b>i.hyper.indices</b>
+<b>-l</b>  <b>--i</b>  <b>-n</b>
+ <b>input</b>=<i>name[,name,...]</i>   <b>wavelengths</b>=<i>string</i>   <b>output_prefix</b>=<i>string</i>
+ [<b>indices</b>=<i>string</i>] [<b>theme</b>=<i>string</i>]
+
+<h2>DESCRIPTION</h2>
+
+<p>
+EM Calculates 86+ spectral indices from hyperspectral and multispectral imagery.
+Supports wavelength-based automatic band matching with thematic organization.
+</p>
+
+<h2>OPTIONS</h2>
+
+<h3>Flags:</h3>
+<dl>
+<dt><b>-l</b></dt>
+<dd>List available indices and themes</dd>
+<dt><b>-i</b></dt>
+<dd>Print detailed information about selected indices</dd>
+<dt><b>-n</b></dt>
+<dd>Normalize indices to 0-1 range where applicable</dd>
+</dl>
+
+<h3>Parameters:</h3>
+<dl>
+<dt><b>input</b>=<i>name[,name,...]</i> <i>(required)</i></dt>
+<dd>Input raster bands (comma-separated list)</dd>
+
+<dt><b>wavelengths</b>=<i>string</i> <i>(required)</i></dt>
+<dd>Wavelengths for input bands in nm (comma-separated, e.g., 450,550,670,800)</dd>
+
+<dt><b>output_prefix</b>=<i>string</i> <i>(required)</i></dt>
+<dd>Prefix for output index rasters</dd>
+
+<dt><b>indices</b>=<i>string</i> <i>(default: ndvi)</i></dt>
+<dd>Indices to calculate (comma-separated or 'all' or theme name)</dd>
+
+<dt><b>theme</b>=<i>string</i></dt>
+<dd>Calculate all indices from a specific theme<br>
+<em>options: vegetation,water,soil,urban,stress,biochemical,pigments,metabolism,materials,all</em></dd>
+</dl>
+
+<h2>EXAMPLES</h2>
+
+<div class="code"><pre>
+<em># List all available indices organized by theme</em>
+i.hyper.indices -l
+
+<em># Show detailed information about indices</em>
+i.hyper.indices -li
+
+<em># Calculate NDVI from multispectral image</em>
+i.hyper.indices input=band_red,band_nir \
+                wavelengths=665,850 \
+                output_prefix=field \
+                indices=NDVI
+
+<em># Calculate all vegetation indices with normalization</em>
+i.hyper.indices -n input=b1,b2,b3,b4,b5 \
+                wavelengths=480,560,665,705,842 \
+                output_prefix=forest \
+                theme=vegetation
+
+<em># Detect plastics in coastal imagery</em>
+i.hyper.indices input=coastal_bands \
+                wavelengths=490,560,665,865,1600 \
+                output_prefix=marine \
+                indices=PLASTIC,PDI,MPDI
+</pre></div>
+
+<h2>THEMES</h2>
+<ul>
+<li><b>vegetation</b>: 15 indices (NDVI, EVI, SAVI, GNDVI, NDRE, MTCI, MCARI...)</li>
+<li><b>pigments</b>: 16 indices (ARI1, ARI2, CRI550, CRI700, CARI...)</li>
+<li><b>metabolism</b>: 13 indices (WI, NDWI1240, LWCI, NDII, SRWI...)</li>
+<li><b>biochemical</b>: 6 indices (CAI, NDLI, PRI, SIPI, PSRI)</li>
+<li><b>water</b>: 3 indices (NDWI, MNDWI, NDMI)</li>
+<li><b>soil</b>: 3 indices (BI, CI, RI)</li>
+<li><b>urban</b>: 2 indices (NDBI, UI)</li>
+<li><b>stress</b>: 4 indices (MSI, NDNI, TCARI)</li>
+<li><b>materials</b>: 24 indices (HI, THI, PLASTIC, PDI, FPI...)</li>
+</ul>
+
+<h2>NOTES</h2>
+<ul>
+<li>Automatic color table application (ndvi, water, viridis)</li>
+<li>Normalization to 0-1 range where applicable (-n flag)</li>
+<li>Graceful handling of missing spectral bands</li>
+<li>Dynamic r.mapcalc expression generation</li>
+</ul>
+
+<h2>AUTHOR</h2>
+GRASS Development Team (2026)
+
+<h2>REFERENCES</h2>
+See individual index references via: i.hyper.indices -li
+</body>
+</html>
+
