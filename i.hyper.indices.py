@@ -1173,7 +1173,8 @@ class HyperspectralIndices:
 
 
 import grass.script as gs
-from grass.script.core import mapcalc, run_command
+from grass.script import mapcalc
+from grass.script.core import run_command
 from grass.exceptions import CalledModuleError
 
 def main():
