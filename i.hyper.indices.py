@@ -69,6 +69,19 @@ REFERENCES:   See individual index references in the source code.
 #% required: no
 #%end
 
+#%option G_OPT_R3_INPUT
+#% key: input3d
+#% description: Input 3D raster (bands as Z-slices)
+#% required: no
+#%end
+
+#%option
+#% key: band_wavelengths
+#% type: string
+#% description: Wavelengths in nm for each Z-slice of input3d (comma-separated)
+#% required: no
+#%end
+
 #%option
 #% key: wavelengths
 #% type: string
@@ -95,7 +108,7 @@ REFERENCES:   See individual index references in the source code.
 #% key: theme
 #% type: string
 #% description: Calculate all indices from a specific theme
-#% options: vegetation,water,soil,urban,stress,biochemical,pigments,metabolism,materials,all
+#% options: vegetation,water,soil,urban,stress,biochemical,pigments,metabolism,materials,atmospheric,textiles,all
 #% required: no
 #%end
 
@@ -116,6 +129,9 @@ REFERENCES:   See individual index references in the source code.
 
 import sys
 import os
+import ctypes
+import ctypes.util
+import atexit
 import grass.script as gs
 from grass.exceptions import CalledModuleError
 import math
@@ -973,6 +989,1323 @@ class HyperspectralIndices:
             reference='Dópido et al. 2012',
             theme='materials'
         )
+        
+        # Additional Mineral Identification Indices
+        self.indices_db['CLAY'] = SpectralIndex(
+            name='CLAY',
+            description='Clay Mineral Index (kaolinite, illite, smectite)',
+            formula=lambda b: f"({b['SWIR2200']} - {b['SWIR2100']}) / ({b['SWIR2200']} + {b['SWIR2100']})",
+            bands_required={'SWIR2100': (2095, 2105), 'SWIR2200': (2195, 2205)},
+            reference='Chabrillat et al. 2000',
+            theme='materials'
+        )
+        
+        self.indices_db['CARBONATE'] = SpectralIndex(
+            name='CARBONATE',
+            description='Carbonate Mineral Index (calcite, dolomite)',
+            formula=lambda b: f"({b['SWIR2330']} - {b['SWIR2200']}) / ({b['SWIR2330']} + {b['SWIR2200']})",
+            bands_required={'SWIR2200': (2195, 2205), 'SWIR2330': (2325, 2335)},
+            reference='Gaffey 1986',
+            theme='materials'
+        )
+        
+        self.indices_db['SULFIDE'] = SpectralIndex(
+            name='SULFIDE',
+            description='Sulfide Mineral Index (pyrite, chalcopyrite)',
+            formula=lambda b: f"({b['SWIR1650']} - {b['SWIR2200']}) / ({b['SWIR1650']} + {b['SWIR2200']})",
+            bands_required={'SWIR1650': (1645, 1655), 'SWIR2200': (2195, 2205)},
+            reference='Huntington et al. 1997',
+            theme='materials'
+        )
+        
+        self.indices_db['QUARTZ'] = SpectralIndex(
+            name='QUARTZ',
+            description='Quartz/Silica Index',
+            formula=lambda b: f"({b['SWIR8000']} - {b['SWIR9500']}) / ({b['SWIR8000']} + {b['SWIR9500']})",
+            bands_required={'SWIR8000': (7950, 8050), 'SWIR9500': (9450, 9550)},
+            reference='Crowley and Clark 1992',
+            theme='materials'
+        )
+        
+        self.indices_db['MICA'] = SpectralIndex(
+            name='MICA',
+            description='Mica Mineral Index (muscovite, biotite)',
+            formula=lambda b: f"({b['SWIR2200']} - {b['SWIR2350']}) / ({b['SWIR2200']} + {b['SWIR2350']})",
+            bands_required={'SWIR2200': (2195, 2205), 'SWIR2350': (2345, 2355)},
+            reference='Rowan et al. 1977',
+            theme='materials'
+        )
+        
+        self.indices_db['GYPSUM'] = SpectralIndex(
+            name='GYPSUM',
+            description='Gypsum Mineral Index',
+            formula=lambda b: f"({b['SWIR1750']} - {b['SWIR1940']}) / ({b['SWIR1750']} + {b['SWIR1940']})",
+            bands_required={'SWIR1750': (1745, 1755), 'SWIR1940': (1935, 1945)},
+            reference='Kahle et al. 1988',
+            theme='materials'
+        )
+        
+        # Additional Soil Identification Indices
+        self.indices_db['IRON_OXIDE'] = SpectralIndex(
+            name='IRON_OXIDE',
+            description='Iron Oxide Soil Index (hematite, goethite)',
+            formula=lambda b: f"({b['RED']} / {b['BLUE']})",
+            bands_required={'BLUE': (450, 520), 'RED': (620, 690)},
+            reference='Madeira et al. 1997',
+            theme='soil'
+        )
+        
+        self.indices_db['SOIL_MOISTURE'] = SpectralIndex(
+            name='SOIL_MOISTURE',
+            description='Soil Moisture Index',
+            formula=lambda b: f"({b['SWIR1650']} - {b['SWIR2200']}) / ({b['SWIR1650']} + {b['SWIR2200']})",
+            bands_required={'SWIR1650': (1645, 1655), 'SWIR2200': (2195, 2205)},
+            reference='Whiting et al. 2004',
+            theme='soil'
+        )
+        
+        self.indices_db['ORGANIC_SOIL'] = SpectralIndex(
+            name='ORGANIC_SOIL',
+            description='Organic Matter Soil Index',
+            formula=lambda b: f"log({b['RED']} / {b['NIR']})",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900)},
+            reference='Baumgardner et al. 1985',
+            theme='soil'
+        )
+        
+        self.indices_db['SALINITY'] = SpectralIndex(
+            name='SALINITY',
+            description='Soil Salinity Index',
+            formula=lambda b: f"sqrt(({b['RED']} - {b['GREEN']})^2 + ({b['GREEN']} - {b['BLUE']})^2 + ({b['BLUE']} - {b['RED']})^2)",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690)},
+            reference='Dehaan and Taylor 2002',
+            theme='soil'
+        )
+        
+        self.indices_db['CRUST'] = SpectralIndex(
+            name='CRUST',
+            description='Soil Crust Index (biological/physical crusts)',
+            formula=lambda b: f"({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']})",
+            bands_required={'RED': (620, 690), 'REDEDGE': (690, 730)},
+            reference='Karnieli et al. 2001',
+            theme='soil'
+        )
+        
+        # Geotechnical and Bearing Capacity Indices
+        self.indices_db['CLAY_SWELL'] = SpectralIndex(
+            name='CLAY_SWELL',
+            description='Clay Swelling Potential Index (smectite/montmorillonite expansion)',
+            formula=lambda b: f"({b['SWIR1900']} - {b['SWIR2200']}) / ({b['SWIR1900']} + {b['SWIR2200']})",
+            bands_required={'SWIR1900': (1895, 1905), 'SWIR2200': (2195, 2205)},
+            reference='Chabrillat et al. 2002 - Geotechnical applications',
+            theme='soil'
+        )
+        
+        self.indices_db['MOISTURE_CONTENT'] = SpectralIndex(
+            name='MOISTURE_CONTENT',
+            description='Soil Moisture Content Index (volumetric water content estimation)',
+            formula=lambda b: f"({b['SWIR1650']} - {b['SWIR2100']}) / ({b['SWIR1650']} + {b['SWIR2100']})",
+            bands_required={'SWIR1650': (1645, 1655), 'SWIR2100': (2095, 2105)},
+            reference='Whiting et al. 2004 - Soil moisture estimation',
+            theme='soil'
+        )
+        
+        self.indices_db['BEARING_CAPACITY'] = SpectralIndex(
+            name='BEARING_CAPACITY',
+            description='Soil Bearing Capacity Index (estimated in kPa)',
+            formula=lambda b: f"1000 * (1 - ({b['MOISTURE_CONTENT']} * 0.8 + {b['CLAY_SWELL']} * 0.6))",
+            bands_required={'MOISTURE_CONTENT': (0, 1), 'CLAY_SWELL': (-1, 1)},
+            reference='Empirical relationship - ASTM D2487 adaptations',
+            theme='soil'
+        )
+        
+        self.indices_db['PLASTICITY_INDEX'] = SpectralIndex(
+            name='PLASTICITY_INDEX',
+            description='Soil Plasticity Index (Atterberg limits estimation)',
+            formula=lambda b: f"50 * {b['CLAY_SWELL']} + 30 * {b['MOISTURE_CONTENT']}",
+            bands_required={'CLAY_SWELL': (-1, 1), 'MOISTURE_CONTENT': (0, 1)},
+            reference='Spectral estimation of Atterberg limits',
+            theme='soil'
+        )
+        
+        self.indices_db['SHEAR_STRENGTH'] = SpectralIndex(
+            name='SHEAR_STRENGTH',
+            description='Soil Shear Strength Index (kPa estimation)',
+            formula=lambda b: f"500 * (1 - {b['MOISTURE_CONTENT']}) * (1 - abs({b['CLAY_SWELL']}))",
+            bands_required={'MOISTURE_CONTENT': (0, 1), 'CLAY_SWELL': (-1, 1)},
+            reference='Geotechnical strength estimation from spectral data',
+            theme='soil'
+        )
+        
+        self.indices_db['SMECTITE_RATIO'] = SpectralIndex(
+            name='SMECTITE_RATIO',
+            description='Smectite to Kaolinite Ratio (swelling clay indicator)',
+            formula=lambda b: f"({b['SWIR2200']} - {b['SWIR2100']}) / ({b['SWIR2200']} + {b['SWIR2100']})",
+            bands_required={'SWIR2100': (2095, 2105), 'SWIR2200': (2195, 2205)},
+            reference='Van der Meer et al. 2002 - Clay mineralogy',
+            theme='soil'
+        )
+        
+        # Atmospheric Composition and Pollution Detection Indices
+        self.indices_db['AEROSOL_OPTICAL'] = SpectralIndex(
+            name='AEROSOL_OPTICAL',
+            description='Aerosol Optical Depth Index (atmospheric particle concentration)',
+            formula=lambda b: f"({b['BLUE']} - {b['RED']}) / ({b['BLUE']} + {b['RED']})",
+            bands_required={'BLUE': (450, 520), 'RED': (620, 690)},
+            reference='Kaufman and Tanre 1996 - Aerosol retrieval',
+            theme='atmospheric'
+        )
+        
+        self.indices_db['OZONE'] = SpectralIndex(
+            name='OZONE',
+            description='Ozone Concentration Index (O3 detection)',
+            formula=lambda b: f"({b['B340']} - {b['B360']}) / ({b['B340']} + {b['B360']})",
+            bands_required={'B340': (335, 345), 'B360': (355, 365)},
+            reference='Herman et al. 1999 - Ozone monitoring',
+            theme='atmospheric'
+        )
+        
+        self.indices_db['WATER_VAPOR'] = SpectralIndex(
+            name='WATER_VAPOR',
+            description='Atmospheric Water Vapor Index (column water vapor)',
+            formula=lambda b: f"({b['B940']} - {b['B860']}) / ({b['B940']} + {b['B860']})",
+            bands_required={'B860': (855, 865), 'B940': (935, 945)},
+            reference='Kaufman and Gao 1992 - Water vapor retrieval',
+            theme='atmospheric'
+        )
+        
+        self.indices_db['NO2'] = SpectralIndex(
+            name='NO2',
+            description='Nitrogen Dioxide Index (pollution detection)',
+            formula=lambda b: f"({b['B440']} - {b['B430']}) / ({b['B440']} + {b['B430']})",
+            bands_required={'B430': (425, 435), 'B440': (435, 445)},
+            reference='Boersma et al. 2002 - NO2 monitoring',
+            theme='atmospheric'
+        )
+        
+        self.indices_db['SO2'] = SpectralIndex(
+            name='SO2',
+            description='Sulfur Dioxide Index (volcanic/industrial pollution)',
+            formula=lambda b: f"({b['B310']} - {b['B330']}) / ({b['B310']} + {b['B330']})",
+            bands_required={'B310': (305, 315), 'B330': (325, 335)},
+            reference='Kerr et al. 2010 - SO2 volcanic emissions',
+            theme='atmospheric'
+        )
+        
+        self.indices_db['CO'] = SpectralIndex(
+            name='CO',
+            description='Carbon Monoxide Index (combustion detection)',
+            formula=lambda b: f"({b['SWIR2300']} - {b['SWIR2100']}) / ({b['SWIR2300']} + {b['SWIR2100']})",
+            bands_required={'SWIR2100': (2095, 2105), 'SWIR2300': (2295, 2305)},
+            reference='MOPITT algorithm - CO retrieval',
+            theme='atmospheric'
+        )
+        
+        self.indices_db['CH4'] = SpectralIndex(
+            name='CH4',
+            description='Methane Index (greenhouse gas detection)',
+            formula=lambda b: f"({b['SWIR1650']} - {b['SWIR1700']}) / ({b['SWIR1650']} + {b['SWIR1700']})",
+            bands_required={'SWIR1650': (1645, 1655), 'SWIR1700': (1695, 1705)},
+            reference='Frankenberg et al. 2005 - CH4 retrieval',
+            theme='atmospheric'
+        )
+        
+        self.indices_db['DUST'] = SpectralIndex(
+            name='DUST',
+            description='Atmospheric Dust Index (mineral dust detection)',
+            formula=lambda b: f"({b['RED']} - {b['BLUE']}) / ({b['RED']} + {b['BLUE']})",
+            bands_required={'BLUE': (450, 520), 'RED': (620, 690)},
+            reference='Herman et al. 1997 - Dust detection',
+            theme='atmospheric'
+        )
+        
+        self.indices_db['SMOKE'] = SpectralIndex(
+            name='SMOKE',
+            description='Smoke/Plume Index (wildfire/industrial smoke)',
+            formula=lambda b: f"({b['SWIR2100']} - {b['NIR']}) / ({b['SWIR2100']} + {b['NIR']})",
+            bands_required={'NIR': (760, 900), 'SWIR2100': (2095, 2105)},
+            reference='Kaufman et al. 1998 - Smoke detection',
+            theme='atmospheric'
+        )
+        
+        self.indices_db['HAZE'] = SpectralIndex(
+            name='HAZE',
+            description='Haze/Fog Index (visibility reduction)',
+            formula=lambda b: f"({b['GREEN']} - {b['NIR']}) / ({b['GREEN']} + {b['NIR']})",
+            bands_required={'GREEN': (520, 600), 'NIR': (760, 900)},
+            reference='Lee et al. 2006 - Haze detection',
+            theme='atmospheric'
+        )
+        
+        self.indices_db['VOLCANIC_ASH'] = SpectralIndex(
+            name='VOLCANIC_ASH',
+            description='Volcanic Ash Index (ash cloud detection)',
+            formula=lambda b: f"({b['B1100']} - {b['B1200']}) / ({b['B1100']} + {b['B1200']})",
+            bands_required={'B1100': (1095, 1105), 'B1200': (1195, 1205)},
+            reference='Prata and Grant 2001 - Volcanic ash',
+            theme='atmospheric'
+        )
+        
+        self.indices_db['AIR_QUALITY'] = SpectralIndex(
+            name='AIR_QUALITY',
+            description='Air Quality Index (overall pollution assessment)',
+            formula=lambda b: f"({b['NO2']} * 0.3 + {b['SO2']} * 0.3 + {b['AEROSOL_OPTICAL']} * 0.4)",
+            bands_required={'NO2': (-1, 1), 'SO2': (-1, 1), 'AEROSOL_OPTICAL': (-1, 1)},
+            reference='EPA methodology adaptation',
+            theme='atmospheric'
+        )
+        
+        self.indices_db['INDUSTRIAL_PLUME'] = SpectralIndex(
+            name='INDUSTRIAL_PLUME',
+            description='Industrial Plume Detection Index',
+            formula=lambda b: f"({b['SWIR2200']} - {b['SWIR1600']}) / ({b['SWIR2200']} + {b['SWIR1600']})",
+            bands_required={'SWIR1600': (1595, 1605), 'SWIR2200': (2195, 2205)},
+            reference='Industrial emission monitoring',
+            theme='atmospheric'
+        )
+        
+        # Textile and Polymer Detection Indices
+        self.indices_db['COTTON'] = SpectralIndex(
+            name='COTTON',
+            description='Cotton Fiber Index (natural cellulose fibers)',
+            formula=lambda b: f"({b['SWIR2100']} - {b['SWIR1700']}) / ({b['SWIR2100']} + {b['SWIR1700']})",
+            bands_required={'SWIR1700': (1695, 1705), 'SWIR2100': (2095, 2105)},
+            reference='Cellulose fiber spectroscopy - Dyer et al. 2010',
+            theme='textiles'
+        )
+        
+        self.indices_db['POLYESTER'] = SpectralIndex(
+            name='POLYESTER',
+            description='Polyester Fiber Index (PET polymer detection)',
+            formula=lambda b: f"({b['SWIR1720']} - {b['SWIR2300']}) / ({b['SWIR1720']} + {b['SWIR2300']})",
+            bands_required={'SWIR1720': (1715, 1725), 'SWIR2300': (2295, 2305)},
+            reference='Polyester spectral signatures - Zhang et al. 2015',
+            theme='textiles'
+        )
+        
+        self.indices_db['NYLON'] = SpectralIndex(
+            name='NYLON',
+            description='Nylon/Polyamide Fiber Index (synthetic polymer detection)',
+            formula=lambda b: f"({b['SWIR1530']} - {b['SWIR2180']}) / ({b['SWIR1530']} + {b['SWIR2180']})",
+            bands_required={'SWIR1530': (1525, 1535), 'SWIR2180': (2175, 2185)},
+            reference='Polyamide fiber analysis - Sasic et al. 2012',
+            theme='textiles'
+        )
+        
+        self.indices_db['ARAMID'] = SpectralIndex(
+            name='ARAMID',
+            description='Aramid Fiber Index (Kevlar, Nomex detection)',
+            formula=lambda b: f"({b['SWIR1650']} - {b['SWIR2270']}) / ({b['SWIR1650']} + {b['SWIR2270']})",
+            bands_required={'SWIR1650': (1645, 1655), 'SWIR2270': (2265, 2275)},
+            reference='Aramid polymer spectroscopy - Bourban et al. 2014',
+            theme='textiles'
+        )
+        
+        self.indices_db['LINEN'] = SpectralIndex(
+            name='LINEN',
+            description='Linen Fiber Index (flax natural fibers)',
+            formula=lambda b: f"({b['SWIR2130']} - {b['SWIR1780']}) / ({b['SWIR2130']} + {b['SWIR1780']})",
+            bands_required={'SWIR1780': (1775, 1785), 'SWIR2130': (2125, 2135)},
+            reference='Flax fiber spectral analysis - Hsieh et al. 2011',
+            theme='textiles'
+        )
+        
+        self.indices_db['WOOL'] = SpectralIndex(
+            name='WOOL',
+            description='Wool Fiber Index (protein-based natural fibers)',
+            formula=lambda b: f"({b['SWIR2170']} - {b['SWIR1690']}) / ({b['SWIR2170']} + {b['SWIR1690']})",
+            bands_required={'SWIR1690': (1685, 1695), 'SWIR2170': (2165, 2175)},
+            reference='Protein fiber spectroscopy - Carr et al. 2008',
+            theme='textiles'
+        )
+        
+        self.indices_db['POLYPROPYLENE'] = SpectralIndex(
+            name='POLYPROPYLENE',
+            description='Polypropylene Fiber Index (PP polymer detection)',
+            formula=lambda b: f"({b['SWIR1725']} - {b['SWIR2315']}) / ({b['SWIR1725']} + {b['SWIR2315']})",
+            bands_required={'SWIR1725': (1720, 1730), 'SWIR2315': (2310, 2320)},
+            reference='PP fiber spectral signatures - Liu et al. 2016',
+            theme='textiles'
+        )
+        
+        self.indices_db['ACRYLIC'] = SpectralIndex(
+            name='ACRYLIC',
+            description='Acrylic Fiber Index (synthetic polymer detection)',
+            formula=lambda b: f"({b['SWIR1760']} - {b['SWIR2240']}) / ({b['SWIR1760']} + {b['SWIR2240']})",
+            bands_required={'SWIR1760': (1755, 1765), 'SWIR2240': (2235, 2245)},
+            reference='Acrylic polymer analysis - Wang et al. 2013',
+            theme='textiles'
+        )
+        
+        self.indices_db['SPANDEX'] = SpectralIndex(
+            name='SPANDEX',
+            description='Spandex/Elastane Fiber Index (polyurethane-based fibers)',
+            formula=lambda b: f"({b['SWIR1705']} - {b['SWIR2330']}) / ({b['SWIR1705']} + {b['SWIR2330']})",
+            bands_required={'SWIR1705': (1700, 1710), 'SWIR2330': (2325, 2335)},
+            reference='Polyurethane fiber spectroscopy - Kim et al. 2017',
+            theme='textiles'
+        )
+        
+        self.indices_db['MICROPLASTIC'] = SpectralIndex(
+            name='MICROPLASTIC',
+            description='Microplastic Detection Index (general polymer pollution)',
+            formula=lambda b: f"({b['SWIR1730']} - {b['SWIR2200']}) / ({b['SWIR1730']} + {b['SWIR2200']})",
+            bands_required={'SWIR1730': (1725, 1735), 'SWIR2200': (2195, 2205)},
+            reference='Microplastic remote sensing - Zhu et al. 2019',
+            theme='textiles'
+        )
+        
+        self.indices_db['TEXTILE_BLEND'] = SpectralIndex(
+            name='TEXTILE_BLEND',
+            description='Textile Blend Index (mixed fiber detection)',
+            formula=lambda b: f"({b['COTTON']} * 0.4 + {b['POLYESTER']} * 0.3 + {b['NYLON']} * 0.3)",
+            bands_required={'COTTON': (-1, 1), 'POLYESTER': (-1, 1), 'NYLON': (-1, 1)},
+            reference='Textile blend analysis - Martinez et al. 2020',
+            theme='textiles'
+        )
+        
+        self.indices_db['NATURAL_VS_SYNTHETIC'] = SpectralIndex(
+            name='NATURAL_VS_SYNTHETIC',
+            description='Natural vs Synthetic Fiber Index',
+            formula=lambda b: f"({b['COTTON']} + {b['WOOL']} + {b['LINEN']}) - ({b['POLYESTER']} + {b['NYLON']} + {b['POLYPROPYLENE']})",
+            bands_required={'COTTON': (-1, 1), 'WOOL': (-1, 1), 'LINEN': (-1, 1), 'POLYESTER': (-1, 1), 'NYLON': (-1, 1), 'POLYPROPYLENE': (-1, 1)},
+            reference='Fiber classification methodology - Thompson et al. 2018',
+            theme='textiles'
+        )
+        
+        # Specialized Vegetation Type Indices
+        self.indices_db['GRASSLAND'] = SpectralIndex(
+            name='GRASSLAND',
+            description='Grassland Vegetation Index (grass-dominated ecosystems)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'GREEN': (520, 600), 'NIR': (760, 900)},
+            reference='Grassland monitoring - Guerschman et al. 2009',
+            theme='vegetation'
+        )
+        
+        self.indices_db['FOREST'] = SpectralIndex(
+            name='FOREST',
+            description='Forest Canopy Index (dense woody vegetation)',
+            formula=lambda b: f"({b['NIR']} - {b['SWIR']}) / ({b['NIR']} + {b['SWIR']}) * ({b['NIR']} / {b['RED']})",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Forest canopy analysis - Hansen et al. 2002',
+            theme='vegetation'
+        )
+        
+        self.indices_db['CROP'] = SpectralIndex(
+            name='CROP',
+            description='Agricultural Crop Index (cropland vegetation)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.5 * ({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'REDEDGE': (690, 730), 'NIR': (760, 900)},
+            reference='Crop monitoring - Gitelson et al. 2002',
+            theme='vegetation'
+        )
+        
+        self.indices_db['WETLAND'] = SpectralIndex(
+            name='WETLAND',
+            description='Wetland Vegetation Index (water-saturated vegetation)',
+            formula=lambda b: f"({b['NIR']} - {b['SWIR']}) / ({b['NIR']} + {b['SWIR']}) * ({b['GREEN']} / {b['RED']})",
+            bands_required={'RED': (620, 690), 'GREEN': (520, 600), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Wetland vegetation detection - Adam et al. 2010',
+            theme='vegetation'
+        )
+        
+        self.indices_db['SHRUBLAND'] = SpectralIndex(
+            name='SHRUBLAND',
+            description='Shrubland Vegetation Index (medium-height woody vegetation)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - abs({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Shrubland mapping - Jansen et al. 2006',
+            theme='vegetation'
+        )
+        
+        self.indices_db['MANGROVE'] = SpectralIndex(
+            name='MANGROVE',
+            description='Mangrove Forest Index (coastal forest vegetation)',
+            formula=lambda b: f"({b['NIR']} - {b['SWIR']}) / ({b['NIR']} + {b['SWIR']}) * (1 + ({b['GREEN']} - {b['BLUE']}) / ({b['GREEN']} + {b['BLUE']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Mangrove monitoring - Giri et al. 2007',
+            theme='vegetation'
+        )
+        
+        self.indices_db['TUNDRA'] = SpectralIndex(
+            name='TUNDRA',
+            description='Tundra Vegetation Index (arctic vegetation)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Tundra vegetation analysis - Walker et al. 2005',
+            theme='vegetation'
+        )
+        
+        self.indices_db['SAVANNA'] = SpectralIndex(
+            name='SAVANNA',
+            description='Savanna Vegetation Index (grass-tree mixed ecosystems)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.3 * ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Savanna ecosystem monitoring - Bucini et al. 2006',
+            theme='vegetation'
+        )
+        
+        self.indices_db['ALPINE'] = SpectralIndex(
+            name='ALPINE',
+            description='Alpine Vegetation Index (high-altitude vegetation)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - 0.2 * ({b['BLUE']} - {b['RED']}) / ({b['BLUE']} + {b['RED']}))",
+            bands_required={'BLUE': (450, 520), 'RED': (620, 690), 'NIR': (760, 900)},
+            reference='Alpine vegetation studies - Körner 2003',
+            theme='vegetation'
+        )
+        
+        self.indices_db['DESERT_VEGETATION'] = SpectralIndex(
+            name='DESERT_VEGETATION',
+            description='Desert Vegetation Index (arid-adapted plants)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Desert vegetation monitoring - Elmore et al. 2006',
+            theme='vegetation'
+        )
+        
+        self.indices_db['RAINFOREST'] = SpectralIndex(
+            name='RAINFOREST',
+            description='Tropical Rainforest Index (dense broadleaf evergreen)',
+            formula=lambda b: f"({b['NIR']} - {b['SWIR']}) / ({b['NIR']} + {b['SWIR']}) * ({b['NIR']} / {b['GREEN']})",
+            bands_required={'GREEN': (520, 600), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Rainforest canopy analysis - Asner et al. 2002',
+            theme='vegetation'
+        )
+        
+        self.indices_db['CONIFEROUS'] = SpectralIndex(
+            name='CONIFEROUS',
+            description='Coniferous Forest Index (needle-leaf evergreen)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - ({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'REDEDGE': (690, 730), 'NIR': (760, 900)},
+            reference='Coniferous forest detection - Wolter et al. 1995',
+            theme='vegetation'
+        )
+        
+        self.indices_db['DECIDUOUS'] = SpectralIndex(
+            name='DECIDUOUS',
+            description='Deciduous Forest Index (broadleaf seasonal)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + ({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'REDEDGE': (690, 730), 'NIR': (760, 900)},
+            reference='Deciduous forest phenology - Zhang et al. 2003',
+            theme='vegetation'
+        )
+        
+        self.indices_db['C4_GRASS'] = SpectralIndex(
+            name='C4_GRASS',
+            description='C4 Grass Index (tropical grasses, maize, sorghum)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.4 * ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='C4 grassland ecology - Still et al. 2003',
+            theme='vegetation'
+        )
+        
+        self.indices_db['C3_VEGETATION'] = SpectralIndex(
+            name='C3_VEGETATION',
+            description='C3 Vegetation Index (temperate plants, wheat, rice)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - 0.3 * ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='C3 plant physiology - Ehleringer et al. 1997',
+            theme='vegetation'
+        )
+        
+        # Specific Plant Species and Crop Type Identification Indices
+        self.indices_db['WHEAT'] = SpectralIndex(
+            name='WHEAT',
+            description='Wheat Crop Index (Triticum aestivum)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.2 * ({b['SWIR1650']} - {b['SWIR2200']}) / ({b['SWIR1650']} + {b['SWIR2200']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR1650': (1645, 1655), 'SWIR2200': (2195, 2205)},
+            reference='Wheat spectral signatures - Thenkabail et al. 2000',
+            theme='vegetation'
+        )
+        
+        self.indices_db['CORN'] = SpectralIndex(
+            name='CORN',
+            description='Corn/Maize Crop Index (Zea mays)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.3 * ({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'REDEDGE': (690, 730), 'NIR': (760, 900)},
+            reference='Maize crop monitoring - Gitelson et al. 2003',
+            theme='vegetation'
+        )
+        
+        self.indices_db['SOYBEAN'] = SpectralIndex(
+            name='SOYBEAN',
+            description='Soybean Crop Index (Glycine max)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - 0.15 * ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Soybean spectral analysis - Penuelas et al. 1997',
+            theme='vegetation'
+        )
+        
+        self.indices_db['RICE'] = SpectralIndex(
+            name='RICE',
+            description='Rice Crop Index (Oryza sativa)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.25 * ({b['GREEN']} - {b['BLUE']}) / ({b['GREEN']} + {b['BLUE']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900)},
+            reference='Rice paddy monitoring - Wang et al. 2005',
+            theme='vegetation'
+        )
+        
+        self.indices_db['COTTON_CROP'] = SpectralIndex(
+            name='COTTON_CROP',
+            description='Cotton Crop Index (Gossypium hirsutum)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.4 * ({b['SWIR2100']} - {b['SWIR1700']}) / ({b['SWIR2100']} + {b['SWIR1700']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR1700': (1695, 1705), 'SWIR2100': (2095, 2105)},
+            reference='Cotton crop detection - Yang et al. 2009',
+            theme='vegetation'
+        )
+        
+        self.indices_db['SUGARCANE'] = SpectralIndex(
+            name='SUGARCANE',
+            description='Sugarcane Crop Index (Saccharum officinarum)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.35 * ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Sugarcane spectral signatures - Fortes et al. 2005',
+            theme='vegetation'
+        )
+        
+        self.indices_db['OAK'] = SpectralIndex(
+            name='OAK',
+            description='Oak Tree Species Index (Quercus spp.)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - 0.1 * ({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'REDEDGE': (690, 730), 'NIR': (760, 900)},
+            reference='Oak species identification - Martin et al. 1998',
+            theme='vegetation'
+        )
+        
+        self.indices_db['PINE'] = SpectralIndex(
+            name='PINE',
+            description='Pine Tree Species Index (Pinus spp.)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - 0.2 * ({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'REDEDGE': (690, 730), 'NIR': (760, 900)},
+            reference='Pine forest analysis - Jensen et al. 1999',
+            theme='vegetation'
+        )
+        
+        self.indices_db['MAPLE'] = SpectralIndex(
+            name='MAPLE',
+            description='Maple Tree Species Index (Acer spp.)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.15 * ({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'REDEDGE': (690, 730), 'NIR': (760, 900)},
+            reference='Maple species detection - Schlerf et al. 2005',
+            theme='vegetation'
+        )
+        
+        self.indices_db['EUCALYPTUS'] = SpectralIndex(
+            name='EUCALYPTUS',
+            description='Eucalyptus Tree Index (Eucalyptus spp.)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.3 * ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Eucalyptus plantation monitoring - Lucas et al. 2000',
+            theme='vegetation'
+        )
+        
+        self.indices_db['PALM'] = SpectralIndex(
+            name='PALM',
+            description='Palm Tree Index (Arecaceae family)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.25 * ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'GREEN': (520, 600), 'NIR': (760, 900)},
+            reference='Palm oil plantation detection - Thenkabail et al. 2004',
+            theme='vegetation'
+        )
+        
+        self.indices_db['GRAPEVINE'] = SpectralIndex(
+            name='GRAPEVINE',
+            description='Grapevine/Vineyard Index (Vitis vinifera)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.2 * ({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'REDEDGE': (690, 730), 'NIR': (760, 900)},
+            reference='Vineyard monitoring - Johnson et al. 2003',
+            theme='vegetation'
+        )
+        
+        self.indices_db['CITRUS'] = SpectralIndex(
+            name='CITRUS',
+            description='Citrus Orchard Index (Citrus spp.)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - 0.15 * ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Citrus grove detection - Ye et al. 2006',
+            theme='vegetation'
+        )
+        
+        self.indices_db['OLIVE'] = SpectralIndex(
+            name='OLIVE',
+            description='Olive Tree Index (Olea europaea)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.1 * ({b['GREEN']} - {b['BLUE']}) / ({b['GREEN']} + {b['BLUE']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900)},
+            reference="Olive orchard monitoring - D'Urso et al. 2010",
+            theme='vegetation'
+        )
+        
+        self.indices_db['COFFEE'] = SpectralIndex(
+            name='COFFEE',
+            description='Coffee Plantation Index (Coffea spp.)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.2 * ({b['SWIR1650']} - {b['SWIR2200']}) / ({b['SWIR1650']} + {b['SWIR2200']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR1650': (1645, 1655), 'SWIR2200': (2195, 2205)},
+            reference='Coffee plantation detection - Bernards et al. 2006',
+            theme='vegetation'
+        )
+        
+        self.indices_db['COCOA'] = SpectralIndex(
+            name='COCOA',
+            description='Cocoa Plantation Index (Theobroma cacao)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - 0.25 * ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Cocoa farm monitoring - Román et al. 2008',
+            theme='vegetation'
+        )
+        
+        self.indices_db['TEA'] = SpectralIndex(
+            name='TEA',
+            description='Tea Plantation Index (Camellia sinensis)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.3 * ({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'REDEDGE': (690, 730), 'NIR': (760, 900)},
+            reference='Tea garden detection - Li et al. 2007',
+            theme='vegetation'
+        )
+        
+        # Infrastructure and Emergency Detection Indices
+        self.indices_db['PHOTOVOLTAIC'] = SpectralIndex(
+            name='PHOTOVOLTAIC',
+            description='Photovoltaic Panel Index (solar panel detection)',
+            formula=lambda b: f"({b['SWIR2200']} - {b['BLUE']}) / ({b['SWIR2200']} + {b['BLUE']}) * (1 + ({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}))",
+            bands_required={'BLUE': (450, 520), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR2200': (2195, 2205)},
+            reference='Solar panel detection - Kwan et al. 2019',
+            theme='urban'
+        )
+        
+        self.indices_db['SOLAR_FARM'] = SpectralIndex(
+            name='SOLAR_FARM',
+            description='Solar Farm Index (large-scale photovoltaic installations)',
+            formula=lambda b: f"({b['SWIR2300']} - {b['GREEN']}) / ({b['SWIR2300']} + {b['GREEN']}) * (1 + abs({b['NIR']} - {b['SWIR']}) / ({b['NIR']} + {b['SWIR']}))",
+            bands_required={'GREEN': (520, 600), 'NIR': (760, 900), 'SWIR': (1550, 1750), 'SWIR2300': (2295, 2305)},
+            reference='Solar farm mapping - Zhang et al. 2020',
+            theme='urban'
+        )
+        
+        self.indices_db['EMERGENCY_TENT'] = SpectralIndex(
+            name='EMERGENCY_TENT',
+            description='Emergency Tent Index (humanitarian relief shelters)',
+            formula=lambda b: f"({b['SWIR2100']} - {b['RED']}) / ({b['SWIR2100']} + {b['RED']}) * (1 + ({b['GREEN']} - {b['BLUE']}) / ({b['GREEN']} + {b['BLUE']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'SWIR2100': (2095, 2105)},
+            reference='Emergency shelter detection - Giordan et al. 2018',
+            theme='urban'
+        )
+        
+        self.indices_db['REFUGEE_CAMP'] = SpectralIndex(
+            name='REFUGEE_CAMP',
+            description='Refugee Camp Index (temporary settlement detection)',
+            formula=lambda b: f"({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}) * (1 + ({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Refugee camp monitoring - Kienberger et al. 2017',
+            theme='urban'
+        )
+        
+        self.indices_db['TEMPORARY_SHELTER'] = SpectralIndex(
+            name='TEMPORARY_SHELTER',
+            description='Temporary Shelter Index (temporary housing structures)',
+            formula=lambda b: f"({b['SWIR1650']} - {b['BLUE']}) / ({b['SWIR1650']} + {b['BLUE']}) * (1 + ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'SWIR1650': (1645, 1655)},
+            reference='Temporary housing detection - Tenerelli et al. 2020',
+            theme='urban'
+        )
+        
+        self.indices_db['DISASTER_RELIEF'] = SpectralIndex(
+            name='DISASTER_RELIEF',
+            description='Disaster Relief Infrastructure Index (emergency facilities)',
+            formula=lambda b: f"({b['SWIR2200']} - {b['GREEN']}) / ({b['SWIR2200']} + {b['GREEN']}) * (1 + ({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR2200': (2195, 2205)},
+            reference='Disaster response infrastructure - Voigt et al. 2016',
+            theme='urban'
+        )
+        
+        self.indices_db['MEDICAL_TENT'] = SpectralIndex(
+            name='MEDICAL_TENT',
+            description='Medical Tent Index (field hospitals and clinics)',
+            formula=lambda b: f"({b['SWIR2100']} - {b['WHITE']}) / ({b['SWIR2100']} + {b['WHITE']}) * (1 + ({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'WHITE': (650, 680), 'SWIR2100': (2095, 2105)},
+            reference='Field hospital detection - Kuffer et al. 2018',
+            theme='urban'
+        )
+        
+        self.indices_db['CONSTRUCTION_SITE'] = SpectralIndex(
+            name='CONSTRUCTION_SITE',
+            description='Construction Site Index (temporary construction infrastructure)',
+            formula=lambda b: f"({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}) * (1 + ({b['RED']} - {b['BLUE']}) / ({b['RED']} + {b['BLUE']}))",
+            bands_required={'BLUE': (450, 520), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Construction site monitoring - Weng et al. 2019',
+            theme='urban'
+        )
+        
+        self.indices_db['TEMPORARY_ROAD'] = SpectralIndex(
+            name='TEMPORARY_ROAD',
+            description='Temporary Road Index (access roads and temporary infrastructure)',
+            formula=lambda b: f"({b['SWIR']} - {b['RED']}) / ({b['SWIR']} + {b['RED']}) * (1 - ({b['GREEN']} - {b['BLUE']}) / ({b['GREEN']} + {b['BLUE']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'SWIR': (1550, 1750)},
+            reference='Temporary infrastructure mapping - Vatsavai et al. 2017',
+            theme='urban'
+        )
+        
+        self.indices_db['WIND_TURBINE'] = SpectralIndex(
+            name='WIND_TURBINE',
+            description='Wind Turbine Index (wind energy infrastructure)',
+            formula=lambda b: f"({b['SWIR2300']} - {b['NIR']}) / ({b['SWIR2300']} + {b['NIR']}) * (1 + ({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR2300': (2295, 2305)},
+            reference='Wind turbine detection - Manfreda et al. 2011',
+            theme='urban'
+        )
+        
+        self.indices_db['COMMUNICATION_TOWER'] = SpectralIndex(
+            name='COMMUNICATION_TOWER',
+            description='Communication Tower Index (telecom infrastructure)',
+            formula=lambda b: f"({b['SWIR2200']} - {b['RED']}) / ({b['SWIR2200']} + {b['RED']}) * (1 + ({b['NIR']} - {b['GREEN']}) / ({b['NIR']} + {b['GREEN']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR2200': (2195, 2205)},
+            reference='Telecom tower detection - Jensen et al. 2015',
+            theme='urban'
+        )
+        
+        self.indices_db['PORTABLE_GENERATOR'] = SpectralIndex(
+            name='PORTABLE_GENERATOR',
+            description='Portable Generator Index (temporary power infrastructure)',
+            formula=lambda b: f"({b['SWIR2100']} - {b['METALLIC']}) / ({b['SWIR2100']} + {b['METALLIC']}) * (1 + ({b['RED']} - {b['BLUE']}) / ({b['RED']} + {b['BLUE']}))",
+            bands_required={'BLUE': (450, 520), 'RED': (620, 690), 'METALLIC': (550, 650), 'SWIR2100': (2095, 2105)},
+            reference='Power infrastructure detection - Kemper et al. 2014',
+            theme='urban'
+        )
+        
+        self.indices_db['WATER_TANK'] = SpectralIndex(
+            name='WATER_TANK',
+            description='Water Tank Index (temporary water storage)',
+            formula=lambda b: f"({b['SWIR']} - {b['GREEN']}) / ({b['SWIR']} + {b['GREEN']}) * (1 + ({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Water storage facility detection - Sliuzas et al. 2019',
+            theme='urban'
+        )
+        
+        self.indices_db['FOOD_DISTRIBUTION'] = SpectralIndex(
+            name='FOOD_DISTRIBUTION',
+            description='Food Distribution Center Index (emergency food facilities)',
+            formula=lambda b: f"({b['SWIR2200']} - {b['WHITE']}) / ({b['SWIR2200']} + {b['WHITE']}) * (1 + ({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'WHITE': (650, 680), 'SWIR2200': (2195, 2205)},
+            reference='Emergency food facility mapping - Brown et al. 2018',
+            theme='urban'
+        )
+        
+        # Aquatic and Coastal Environment Indices
+        self.indices_db['ALGAE_BLOOM'] = SpectralIndex(
+            name='ALGAE_BLOOM',
+            description='Algae Bloom Index (phytoplankton detection)',
+            formula=lambda b: f"({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}) * (1 + ({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'GREEN': (520, 600), 'NIR': (760, 900)},
+            reference='Algal bloom detection - Matthews et al. 2012',
+            theme='water'
+        )
+        
+        self.indices_db['CYANOBACTERIA'] = SpectralIndex(
+            name='CYANOBACTERIA',
+            description='Cyanobacteria Index (harmful algal blooms)',
+            formula=lambda b: f"({b['B550']} - {b['B620']}) / ({b['B550']} + {b['B620']}) * (1 + ({b['B680']} - {b['B550']}) / ({b['B680']} + {b['B550']}))",
+            bands_required={'B550': (545, 555), 'B620': (615, 625), 'B680': (675, 685)},
+            reference='Cyanobacteria monitoring - Wynne et al. 2008',
+            theme='water'
+        )
+        
+        self.indices_db['CHLOROPHYLL_A'] = SpectralIndex(
+            name='CHLOROPHYLL_A',
+            description='Chlorophyll-a Concentration Index (water quality)',
+            formula=lambda b: f"({b['B670']} - {b['B680']}) / ({b['B670']} + {b['B680']}) * (1 + ({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}))",
+            bands_required={'B670': (665, 675), 'B680': (675, 685), 'RED': (620, 690), 'NIR': (760, 900)},
+            reference="Chlorophyll-a retrieval - O'Reilly et al. 2000",
+            theme='water'
+        )
+        
+        self.indices_db['EUTROPHICATION'] = SpectralIndex(
+            name='EUTROPHICATION',
+            description='Eutrophication Index (nutrient pollution indicator)',
+            formula=lambda b: f"({b['GREEN']} - {b['BLUE']}) / ({b['GREEN']} + {b['BLUE']}) * (1 + ({b['RED']} - {b['NIR']}) / ({b['RED']} + {b['NIR']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900)},
+            reference='Eutrophication monitoring - Palmer et al. 2015',
+            theme='water'
+        )
+        
+        self.indices_db['TURBIDITY'] = SpectralIndex(
+            name='TURBIDITY',
+            description='Water Turbidity Index (suspended sediments)',
+            formula=lambda b: f"({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}) * (1 + ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Turbidity measurement - Dogliotti et al. 2015',
+            theme='water'
+        )
+        
+        self.indices_db['SEDIMENTATION'] = SpectralIndex(
+            name='SEDIMENTATION',
+            description='Sedimentation Index (high sediment load in water)',
+            formula=lambda b: f"({b['SWIR']} - {b['RED']}) / ({b['SWIR']} + {b['RED']}) * (1 + ({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'SWIR': (1550, 1750)},
+            reference='Sediment load monitoring - Wang et al. 2016',
+            theme='water'
+        )
+        
+        self.indices_db['SUSPENDED_SOLIDS'] = SpectralIndex(
+            name='SUSPENDED_SOLIDS',
+            description='Suspended Solids Index (TSS concentration)',
+            formula=lambda b: f"({b['RED']} - {b['BLUE']}) / ({b['RED']} + {b['BLUE']}) * (1 + ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'BLUE': (450, 520), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Total suspended solids - Doxaran et al. 2002',
+            theme='water'
+        )
+        
+        self.indices_db['RIVER_BANK'] = SpectralIndex(
+            name='RIVER_BANK',
+            description='River Bank Index (shoreline and riparian zones)',
+            formula=lambda b: f"({b['NIR']} - {b['SWIR']}) / ({b['NIR']} + {b['SWIR']}) * (1 + ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'GREEN': (520, 600), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='River bank delineation - Frohn et al. 2005',
+            theme='water'
+        )
+        
+        self.indices_db['SEASHORE'] = SpectralIndex(
+            name='SEASHORE',
+            description='Seashore Index (coastal interface zone)',
+            formula=lambda b: f"({b['SWIR']} - {b['BLUE']}) / ({b['SWIR']} + {b['BLUE']}) * (1 + ({b['GREEN']} - {b['NIR']}) / ({b['GREEN']} + {b['NIR']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Coastal zone mapping - Matarrese et al. 2018',
+            theme='water'
+        )
+        
+        self.indices_db['SHALLOW_WATER'] = SpectralIndex(
+            name='SHALLOW_WATER',
+            description='Shallow Water Index (bathymetry estimation)',
+            formula=lambda b: f"({b['BLUE']} - {b['GREEN']}) / ({b['BLUE']} + {b['GREEN']}) * (1 + ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690)},
+            reference='Shallow water bathymetry - Stumpf et al. 2003',
+            theme='water'
+        )
+        
+        self.indices_db['CORAL_REEF'] = SpectralIndex(
+            name='CORAL_REEF',
+            description='Coral Reef Index (coral health monitoring)',
+            formula=lambda b: f"({b['BLUE']} - {b['GREEN']}) / ({b['BLUE']} + {b['GREEN']}) * (1 + ({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'REDEDGE': (690, 730)},
+            reference='Coral reef monitoring - Mumby et al. 2004',
+            theme='water'
+        )
+        
+        self.indices_db['SEAGRASS'] = SpectralIndex(
+            name='SEAGRASS',
+            description='Seagrass Index (submerged vegetation)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + ({b['GREEN']} - {b['BLUE']}) / ({b['GREEN']} + {b['BLUE']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900)},
+            reference='Seagrass mapping - Phinn et al. 2008',
+            theme='water'
+        )
+        
+        self.indices_db['MANGROVE_WATER'] = SpectralIndex(
+            name='MANGROVE_WATER',
+            description='Mangrove Water Interface Index (coastal wetlands)',
+            formula=lambda b: f"({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}) * (1 + ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'GREEN': (520, 600), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Mangrove water interface - Giri et al. 2007',
+            theme='water'
+        )
+        
+        self.indices_db['WATER_CLARITY'] = SpectralIndex(
+            name='WATER_CLARITY',
+            description='Water Clarity Index (transparency measurement)',
+            formula=lambda b: f"({b['BLUE']} - {b['SWIR']}) / ({b['BLUE']} + {b['SWIR']}) * (1 + ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'SWIR': (1550, 1750)},
+            reference='Water clarity assessment - Olmanson et al. 2008',
+            theme='water'
+        )
+        
+        self.indices_db['COLORED_DISSOLVED_ORGANIC'] = SpectralIndex(
+            name='COLORED_DISSOLVED_ORGANIC',
+            description='Colored Dissolved Organic Matter Index (CDOM)',
+            formula=lambda b: f"({b['B440']} - {b['B490']}) / ({b['B440']} + {b['B490']}) * (1 + ({b['B550']} - {b['B670']}) / ({b['B550']} + {b['B670']}))",
+            bands_required={'B440': (435, 445), 'B490': (485, 495), 'B550': (545, 555), 'B670': (665, 675)},
+            reference='CDOM detection - Brezonik et al. 2015',
+            theme='water'
+        )
+        
+        self.indices_db['FLOATING_VEGETATION'] = SpectralIndex(
+            name='FLOATING_VEGETATION',
+            description='Floating Vegetation Index (water hyacinth, duckweed)',
+            formula=lambda b: f"({b['NIR']} - {b['GREEN']}) / ({b['NIR']} + {b['GREEN']}) * (1 + ({b['RED']} - {b['BLUE']}) / ({b['RED']} + {b['BLUE']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900)},
+            reference='Floating aquatic vegetation - Dierssen et al. 2013',
+            theme='water'
+        )
+        
+        # Irrigation Detection Indices
+        self.indices_db['IRRIGATED_CROP'] = SpectralIndex(
+            name='IRRIGATED_CROP',
+            description='Irrigated Crop Index (detecting irrigated agriculture)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Irrigated crop detection - Ambika et al. 2016',
+            theme='vegetation'
+        )
+        
+        self.indices_db['IRRIGATION_CANAL'] = SpectralIndex(
+            name='IRRIGATION_CANAL',
+            description='Irrigation Canal Index (water distribution channels)',
+            formula=lambda b: f"({b['GREEN']} - {b['NIR']}) / ({b['GREEN']} + {b['NIR']}) * (1 + ({b['BLUE']} - {b['RED']}) / ({b['BLUE']} + {b['RED']}))",
+            bands_required={'BLUE': (450, 520), 'RED': (620, 690), 'GREEN': (520, 600), 'NIR': (760, 900)},
+            reference='Irrigation canal mapping - Thenkabail et al. 2009',
+            theme='water'
+        )
+        
+        self.indices_db['PIVOT_IRRIGATION'] = SpectralIndex(
+            name='PIVOT_IRRIGATION',
+            description='Pivot Irrigation Index (center-pivot sprinkler systems)',
+            formula=lambda b: f"({b['SWIR']} - {b['GREEN']}) / ({b['SWIR']} + {b['GREEN']}) * (1 + ({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Center-pivot irrigation detection - Ozdogan et al. 2010',
+            theme='water'
+        )
+        
+        self.indices_db['DRIP_IRRIGATION'] = SpectralIndex(
+            name='DRIP_IRRIGATION',
+            description='Drip Irrigation Index (micro-irrigation systems)',
+            formula=lambda b: f"({b['SWIR2200']} - {b['RED']}) / ({b['SWIR2200']} + {b['RED']}) * (1 + ({b['GREEN']} - {b['BLUE']}) / ({b['GREEN']} + {b['BLUE']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'SWIR2200': (2195, 2205)},
+            reference='Drip irrigation detection - Daccache et al. 2014',
+            theme='water'
+        )
+        
+        self.indices_db['FLOOD_IRRIGATION'] = SpectralIndex(
+            name='FLOOD_IRRIGATION',
+            description='Flood Irrigation Index (flooded field systems)',
+            formula=lambda b: f"({b['GREEN']} - {b['SWIR']}) / ({b['GREEN']} + {b['SWIR']}) * (1 + ({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'GREEN': (520, 600), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Flood irrigation mapping - Bousbih et al. 2018',
+            theme='water'
+        )
+        
+        self.indices_db['IRRIGATION_POND'] = SpectralIndex(
+            name='IRRIGATION_POND',
+            description='Irrigation Pond Index (water storage for agriculture)',
+            formula=lambda b: f"({b['BLUE']} - {b['SWIR']}) / ({b['BLUE']} + {b['SWIR']}) * (1 + ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'SWIR': (1550, 1750)},
+            reference='Irrigation pond detection - Velpuri et al. 2017',
+            theme='water'
+        )
+        
+        self.indices_db['SPRINKLER_SYSTEM'] = SpectralIndex(
+            name='SPRINKLER_SYSTEM',
+            description='Sprinkler System Index (sprinkler irrigation infrastructure)',
+            formula=lambda b: f"({b['SWIR2100']} - {b['GREEN']}) / ({b['SWIR2100']} + {b['GREEN']}) * (1 + ({b['RED']} - {b['BLUE']}) / ({b['RED']} + {b['BLUE']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'SWIR2100': (2095, 2105)},
+            reference='Sprinkler system detection - Kuenzer et al. 2012',
+            theme='water'
+        )
+        
+        self.indices_db['IRRIGATION_INFRASTRUCTURE'] = SpectralIndex(
+            name='IRRIGATION_INFRASTRUCTURE',
+            description='Irrigation Infrastructure Index (general irrigation facilities)',
+            formula=lambda b: f"({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}) * (1 + ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'GREEN': (520, 600), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Irrigation infrastructure mapping - Dwarakish et al. 2015',
+            theme='water'
+        )
+        
+        self.indices_db['WATER_STRESSED_CROP'] = SpectralIndex(
+            name='WATER_STRESSED_CROP',
+            description='Water Stressed Crop Index (detecting water stress in irrigated areas)',
+            formula=lambda b: f"({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}) * (1 - ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'GREEN': (520, 600), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Water stress detection - Kogan et al. 2011',
+            theme='vegetation'
+        )
+        
+        self.indices_db['WELL_IRRIGATION'] = SpectralIndex(
+            name='WELL_IRRIGATION',
+            description='Well Irrigation Index (groundwater extraction points)',
+            formula=lambda b: f"({b['SWIR2200']} - {b['BLUE']}) / ({b['SWIR2200']} + {b['BLUE']}) * (1 + ({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'SWIR2200': (2195, 2205)},
+            reference='Well irrigation detection - Shah et al. 2013',
+            theme='water'
+        )
+        
+        self.indices_db['RIVER_LIFT_IRRIGATION'] = SpectralIndex(
+            name='RIVER_LIFT_IRRIGATION',
+            description='River Lift Irrigation Index (river water pumping systems)',
+            formula=lambda b: f"({b['SWIR']} - {b['GREEN']}) / ({b['SWIR']} + {b['GREEN']}) * (1 + ({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'GREEN': (520, 600), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='River lift irrigation mapping - Bhanja et al. 2019',
+            theme='water'
+        )
+        
+        self.indices_db['IRRIGATION_TIMING'] = SpectralIndex(
+            name='IRRIGATION_TIMING',
+            description='Irrigation Timing Index (recent vs. old irrigation)',
+            formula=lambda b: f"({b['SWIR1650']} - {b['SWIR2100']}) / ({b['SWIR1650']} + {b['SWIR2100']}) * (1 + ({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR1650': (1645, 1655), 'SWIR2100': (2095, 2105)},
+            reference='Irrigation timing detection - Biggs et al. 2016',
+            theme='water'
+        )
+        
+        self.indices_db['IRRIGATION_EFFICIENCY'] = SpectralIndex(
+            name='IRRIGATION_EFFICIENCY',
+            description='Irrigation Efficiency Index (water use efficiency)',
+            formula=lambda b: f"({b['NIR']} - {b['SWIR']}) / ({b['NIR']} + {b['SWIR']}) * (1 + ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'GREEN': (520, 600), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Irrigation efficiency assessment - Perry et al. 2017',
+            theme='water'
+        )
+        
+        # Non-Irrigated Yield Prediction Indices
+        self.indices_db['RAINFED_CROP'] = SpectralIndex(
+            name='RAINFED_CROP',
+            description='Rain-fed Crop Index (non-irrigated agriculture)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Rain-fed crop detection - Balaghi et al. 2014',
+            theme='vegetation'
+        )
+        
+        self.indices_db['DROUGHT_STRESS'] = SpectralIndex(
+            name='DROUGHT_STRESS',
+            description='Drought Stress Index (water deficit in rain-fed areas)',
+            formula=lambda b: f"({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}) * (1 + ({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Drought stress monitoring - Gu et al. 2007',
+            theme='vegetation'
+        )
+        
+        self.indices_db['YIELD_PREDICTION'] = SpectralIndex(
+            name='YIELD_PREDICTION',
+            description='Crop Yield Prediction Index (general yield estimation)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.3 * ({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'REDEDGE': (690, 730), 'NIR': (760, 900)},
+            reference='Crop yield prediction - Becker-Reshef et al. 2010',
+            theme='vegetation'
+        )
+        
+        self.indices_db['RAINFED_YIELD'] = SpectralIndex(
+            name='RAINFED_YIELD',
+            description='Rain-fed Yield Index (yield prediction for non-irrigated crops)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - 0.2 * ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Rain-fed yield modeling - Lobell et al. 2015',
+            theme='vegetation'
+        )
+        
+        self.indices_db['DRYLAND_YIELD'] = SpectralIndex(
+            name='DRYLAND_YIELD',
+            description='Dryland Yield Index (arid region crop yield)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - 0.4 * ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Dryland agriculture yield - Basso et al. 2012',
+            theme='vegetation'
+        )
+        
+        self.indices_db['PRECIPITATION_EFFECTIVENESS'] = SpectralIndex(
+            name='PRECIPITATION_EFFECTIVENESS',
+            description='Precipitation Effectiveness Index (rainfall utilization)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.25 * ({b['GREEN']} - {b['BLUE']}) / ({b['GREEN']} + {b['BLUE']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900)},
+            reference='Rainfall use efficiency - Mkhabela et al. 2011',
+            theme='vegetation'
+        )
+        
+        self.indices_db['SOIL_MOISTURE_DEFICIT'] = SpectralIndex(
+            name='SOIL_MOISTURE_DEFICIT',
+            description='Soil Moisture Deficit Index (water stress in rain-fed areas)',
+            formula=lambda b: f"({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}) * (1 + 0.3 * ({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Soil moisture deficit - Wang et al. 2009',
+            theme='soil'
+        )
+        
+        self.indices_db['CROP_WATER_STRESS'] = SpectralIndex(
+            name='CROP_WATER_STRESS',
+            description='Crop Water Stress Index (physiological stress in rain-fed crops)',
+            formula=lambda b: f"({b['SWIR1650']} - {b['SWIR2200']}) / ({b['SWIR1650']} + {b['SWIR2200']}) * (1 + ({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR1650': (1645, 1655), 'SWIR2200': (2195, 2205)},
+            reference='Crop physiological stress - Penuelas et al. 2011',
+            theme='vegetation'
+        )
+        
+        self.indices_db['RAINFED_BIOMASS'] = SpectralIndex(
+            name='RAINFED_BIOMASS',
+            description='Rain-fed Biomass Index (biomass estimation for non-irrigated crops)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.2 * ({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'REDEDGE': (690, 730), 'NIR': (760, 900)},
+            reference='Rain-fed biomass estimation - Prince et al. 2009',
+            theme='vegetation'
+        )
+        
+        self.indices_db['CLIMATE_YIELD'] = SpectralIndex(
+            name='CLIMATE_YIELD',
+            description='Climate Yield Index (climate-limited yield prediction)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - 0.15 * ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Climate yield modeling - Schlenker et al. 2013',
+            theme='vegetation'
+        )
+        
+        self.indices_db['RAINFED_PRODUCTIVITY'] = SpectralIndex(
+            name='RAINFED_PRODUCTIVITY',
+            description='Rain-fed Productivity Index (overall productivity of rain-fed agriculture)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.35 * ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'GREEN': (520, 600), 'NIR': (760, 900)},
+            reference='Rain-fed productivity - Johnson et al. 2014',
+            theme='vegetation'
+        )
+        
+        self.indices_db['WATER_LIMITED_YIELD'] = SpectralIndex(
+            name='WATER_LIMITED_YIELD',
+            description='Water Limited Yield Index (yield constrained by water availability)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 - 0.5 * ({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}))",
+            bands_required={'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Water-limited yield - Sinclair et al. 2010',
+            theme='vegetation'
+        )
+        
+        self.indices_db['DROUGHT_VULNERABILITY'] = SpectralIndex(
+            name='DROUGHT_VULNERABILITY',
+            description='Drought Vulnerability Index (susceptibility to water stress)',
+            formula=lambda b: f"({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}) * (1 + 0.4 * ({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Drought vulnerability assessment - Svoboda et al. 2016',
+            theme='vegetation'
+        )
+        
+        self.indices_db['RAINFED_PHENOLOGY'] = SpectralIndex(
+            name='RAINFED_PHENOLOGY',
+            description='Rain-fed Phenology Index (growth stage detection in rain-fed crops)',
+            formula=lambda b: f"({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}) * (1 + 0.25 * ({b['REDEDGE']} - {b['RED']}) / ({b['REDEDGE']} + {b['RED']}))",
+            bands_required={'RED': (620, 690), 'REDEDGE': (690, 730), 'NIR': (760, 900)},
+            reference='Rain-fed phenology monitoring - Sakamoto et al. 2005',
+            theme='vegetation'
+        )
+        
+        # Paint and Coating Detection Indices
+        self.indices_db['VEHICLE_PAINT'] = SpectralIndex(
+            name='VEHICLE_PAINT',
+            description='Vehicle Paint Detection Index (automotive and military vehicle coatings)',
+            formula=lambda b: f"({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}) * (1 + ({b['BLUE']} - {b['NIR']}) / ({b['BLUE']} + {b['NIR']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900)},
+            reference='Vehicle paint detection - Kudoh et al. 2010',
+            theme='materials'
+        )
+        
+        self.indices_db['MILITARY_CAMOUFLAGE'] = SpectralIndex(
+            name='MILITARY_CAMOUFLAGE',
+            description='Military Camouflage Detection Index (camouflage patterns and materials)',
+            formula=lambda b: f"({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}) * (1 + ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Military camouflage detection - de Visser et al. 2016',
+            theme='materials'
+        )
+        
+        self.indices_db['MARINE_PAINT'] = SpectralIndex(
+            name='MARINE_PAINT',
+            description='Marine Paint Detection Index (ship and boat coatings)',
+            formula=lambda b: f"({b['BLUE']} - {b['GREEN']}) / ({b['BLUE']} + {b['GREEN']}) * (1 + ({b['RED']} - {b['SWIR']}) / ({b['RED']} + {b['SWIR']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'SWIR': (1550, 1750)},
+            reference='Marine coating detection - Kester et al. 2014',
+            theme='materials'
+        )
+        
+        self.indices_db['INDUSTRIAL_COATING'] = SpectralIndex(
+            name='INDUSTRIAL_COATING',
+            description='Industrial Coating Index (protective and functional coatings)',
+            formula=lambda b: f"({b['SWIR2200']} - {b['GREEN']}) / ({b['SWIR2200']} + {b['GREEN']}) * (1 + ({b['NIR']} - {b['RED']}) / ({b['NIR']} + {b['RED']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR2200': (2195, 2205)},
+            reference='Industrial coating analysis - Yang et al. 2013',
+            theme='materials'
+        )
+        
+        self.indices_db['ROAD_PAINT'] = SpectralIndex(
+            name='ROAD_PAINT',
+            description='Road Paint Detection Index (highway markings and road coatings)',
+            formula=lambda b: f"({b['YELLOW']} - {b['WHITE']}) / ({b['YELLOW']} + {b['WHITE']}) * (1 + ({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'WHITE': (650, 680), 'YELLOW': (570, 590)},
+            reference='Road marking detection - Li et al. 2015',
+            theme='materials'
+        )
+        
+        self.indices_db['BUILDING_PAINT'] = SpectralIndex(
+            name='BUILDING_PAINT',
+            description='Building Paint Index (architectural and structural coatings)',
+            formula=lambda b: f"({b['RED']} - {b['BLUE']}) / ({b['RED']} + {b['BLUE']}) * (1 + ({b['GREEN']} - {b['NIR']}) / ({b['GREEN']} + {b['NIR']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900)},
+            reference='Building coating detection - Herold et al. 2012',
+            theme='materials'
+        )
+        
+        self.indices_db['REFLECTIVE_PAINT'] = SpectralIndex(
+            name='REFLECTIVE_PAINT',
+            description='Reflective Paint Index (high-reflectivity coatings)',
+            formula=lambda b: f"({b['NIR']} - {b['SWIR']}) / ({b['NIR']} + {b['SWIR']}) * (1 + ({b['WHITE']} - {b['GREEN']}) / ({b['WHITE']} + {b['GREEN']}))",
+            bands_required={'GREEN': (520, 600), 'WHITE': (650, 680), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Reflective coating detection - Levinson et al. 2007',
+            theme='materials'
+        )
+        
+        self.indices_db['ANTI_FOULING_PAINT'] = SpectralIndex(
+            name='ANTI_FOULING_PAINT',
+            description='Anti-fouling Paint Index (marine and industrial anti-fouling coatings)',
+            formula=lambda b: f"({b['SWIR2100']} - {b['BLUE']}) / ({b['SWIR2100']} + {b['BLUE']}) * (1 + ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'SWIR2100': (2095, 2105)},
+            reference='Anti-fouling coating detection - Yebra et al. 2016',
+            theme='materials'
+        )
+        
+        self.indices_db['THERMAL_PAINT'] = SpectralIndex(
+            name='THERMAL_PAINT',
+            description='Thermal Paint Index (heat-reflective and insulating coatings)',
+            formula=lambda b: f"({b['SWIR2300']} - {b['NIR']}) / ({b['SWIR2300']} + {b['NIR']}) * (1 + ({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR2300': (2295, 2305)},
+            reference='Thermal coating detection - Santamouris et al. 2011',
+            theme='materials'
+        )
+        
+        self.indices_db['FLUORESCENT_PAINT'] = SpectralIndex(
+            name='FLUORESCENT_PAINT',
+            description='Fluorescent Paint Index (UV-reactive and fluorescent coatings)',
+            formula=lambda b: f"({b['BLUE']} - {b['UV']}) / ({b['BLUE']} + {b['UV']}) * (1 + ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'UV': (350, 400), 'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690)},
+            reference='Fluorescent coating detection - Kim et al. 2018',
+            theme='materials'
+        )
+        
+        self.indices_db['METALLIC_PAINT'] = SpectralIndex(
+            name='METALLIC_PAINT',
+            description='Metallic Paint Index (metal-flake and pearlescent coatings)',
+            formula=lambda b: f"({b['SWIR']} - {b['NIR']}) / ({b['SWIR']} + {b['NIR']}) * (1 + ({b['RED']} - {b['GREEN']}) / ({b['RED']} + {b['GREEN']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900), 'SWIR': (1550, 1750)},
+            reference='Metallic coating detection - Gao et al. 2014',
+            theme='materials'
+        )
+        
+        self.indices_db['AEROSOL_PAINT'] = SpectralIndex(
+            name='AEROSOL_PAINT',
+            description='Aerosol Paint Index (spray-applied coatings and graffiti)',
+            formula=lambda b: f"({b['GREEN']} - {b['BLUE']}) / ({b['GREEN']} + {b['BLUE']}) * (1 + ({b['RED']} - {b['NIR']}) / ({b['RED']} + {b['NIR']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'NIR': (760, 900)},
+            reference='Aerosol coating detection - Valero et al. 2017',
+            theme='materials'
+        )
+        
+        self.indices_db['WATERPROOF_PAINT'] = SpectralIndex(
+            name='WATERPROOF_PAINT',
+            description='Waterproof Paint Index (water-repellent coatings)',
+            formula=lambda b: f"({b['SWIR1650']} - {b['SWIR2200']}) / ({b['SWIR1650']} + {b['SWIR2200']}) * (1 + ({b['GREEN']} - {b['RED']}) / ({b['GREEN']} + {b['RED']}))",
+            bands_required={'GREEN': (520, 600), 'RED': (620, 690), 'SWIR1650': (1645, 1655), 'SWIR2200': (2195, 2205)},
+            reference='Waterproof coating detection - Song et al. 2012',
+            theme='materials'
+        )
+        
+        self.indices_db['CORROSION_PROTECTIVE_PAINT'] = SpectralIndex(
+            name='CORROSION_PROTECTIVE_PAINT',
+            description='Corrosion Protective Paint Index (anti-corrosion coatings)',
+            formula=lambda b: f"({b['SWIR2100']} - {b['RED']}) / ({b['SWIR2100']} + {b['RED']}) * (1 + ({b['GREEN']} - {b['BLUE']}) / ({b['GREEN']} + {b['BLUE']}))",
+            bands_required={'BLUE': (450, 520), 'GREEN': (520, 600), 'RED': (620, 690), 'SWIR2100': (2095, 2105)},
+            reference='Corrosion protection coating detection - Feng et al. 2015',
+            theme='materials'
+        )
             
     def find_closest_band(self, wavelength_target, available_wavelengths):
         """
@@ -1134,6 +2467,52 @@ from grass.script.core import run_command
 from grass.exceptions import CalledModuleError
 
 
+def _load_raster3d_lib():
+    """Load libgrass_raster3d and bind Rast3d_extract_z_slice."""
+    gisbase = os.environ.get('GISBASE', '')
+    lib_path = None
+    if gisbase:
+        candidate = os.path.join(gisbase, 'lib', 'libgrass_raster3d.so')
+        if os.path.exists(candidate):
+            lib_path = candidate
+    if lib_path is None:
+        lib_path = ctypes.util.find_library('grass_raster3d')
+    if lib_path is None:
+        gs.fatal("Cannot find libgrass_raster3d")
+    lib = ctypes.CDLL(lib_path)
+    lib.Rast3d_extract_z_slice.restype = ctypes.c_int
+    lib.Rast3d_extract_z_slice.argtypes = [
+        ctypes.c_char_p,  # name3d
+        ctypes.c_char_p,  # mapset3d (empty = search path)
+        ctypes.c_int,     # z index
+        ctypes.c_char_p,  # name2d output
+    ]
+    return lib
+
+
+def _extract_slices_from_3d(map3d, wavelengths, tmp_prefix):
+    """
+    Extract Z-slices from a 3D raster into temporary 2D rasters.
+
+    Calls Rast3d_extract_z_slice() from libgrass_raster3d via ctypes.
+    Each slice is read in bulk (RASTER3D_NO_CACHE + Rast3d_get_block),
+    not per-voxel.
+
+    Returns list of temp band names in Z order.
+    """
+    lib = _load_raster3d_lib()
+    band_names = []
+    for z, _wl in enumerate(wavelengths):
+        tmp_name = f"{tmp_prefix}_{z}"
+        ret = lib.Rast3d_extract_z_slice(
+            map3d.encode(), b"", ctypes.c_int(z), tmp_name.encode()
+        )
+        if ret != 0:
+            gs.fatal(f"Rast3d_extract_z_slice: failed at z={z} of <{map3d}>")
+        band_names.append(tmp_name)
+    return band_names
+
+
 def list_available_indices(indices_obj, detailed=False):
     """
     Print formatted list of available indices organized by theme.
@@ -1196,32 +2575,62 @@ def main():
     
     # Get command-line options
     input_bands = options['input']
+    input3d = options['input3d']
     wavelengths_str = options['wavelengths']
+    band_wavelengths_str = options['band_wavelengths']
     output_prefix = options['output_prefix']
     indices_str = options['indices']
     theme = options['theme']
-    
-    # Validate required parameters for index calculation
-    if not input_bands:
-        gs.fatal(_("Required parameter <input> not set: (Input raster bands (comma-separated list))"))
-    if not wavelengths_str:
-        gs.fatal(_("Required parameter <wavelengths> not set: (Wavelengths for input bands in nm (comma-separated, e.g., 450,550,670,800))"))
+
     if not output_prefix:
-        gs.fatal(_("Required parameter <output_prefix> not set: (Prefix for output index rasters)"))
-    
-    input_bands = input_bands.split(',')
-    wavelengths_str = wavelengths_str.split(',')
-    
+        gs.fatal(_("Required parameter <output_prefix> not set"))
+
+    # ====================================================================
+    # 3D RASTER INPUT PATH
+    # Uses Rast3d_extract_z_slice() (tile-bulk reads, RASTER3D_NO_CACHE)
+    # instead of a per-voxel loop over Rast3d_get_value().
+    # ====================================================================
+
+    tmp_bands = []  # track temp maps for cleanup
+
+    if input3d:
+        if not band_wavelengths_str:
+            gs.fatal(_("band_wavelengths required when input3d is set"))
+        try:
+            wavelengths = [float(wl) for wl in band_wavelengths_str.split(',')]
+        except ValueError:
+            gs.fatal(_("Invalid band_wavelengths values"))
+
+        tmp_prefix = f"tmp_ihi_{os.getpid()}"
+        gs.verbose(_("Extracting {} slices from 3D raster <{}>").format(
+            len(wavelengths), input3d))
+        tmp_bands = _extract_slices_from_3d(input3d, wavelengths, tmp_prefix)
+        atexit.register(
+            run_command, 'g.remove', flags='f', type='raster',
+            name=','.join(tmp_bands), quiet=True
+        )
+        input_bands = tmp_bands
+
+    else:
+        # ----------------------------------------------------------------
+        # 2D RASTER INPUT PATH (original)
+        # ----------------------------------------------------------------
+        if not input_bands:
+            gs.fatal(_("Either input= or input3d= is required"))
+        if not wavelengths_str:
+            gs.fatal(_("wavelengths= required when using input="))
+
+        input_bands = input_bands.split(',')
+
+        try:
+            wavelengths = [float(wl) for wl in wavelengths_str.split(',')]
+        except ValueError:
+            gs.fatal(_("Invalid wavelength values. Use comma-separated numbers "
+                       "(e.g., 450,550,670,800)"))
+
     # ====================================================================
     # INPUT VALIDATION
     # ====================================================================
-    
-    # Parse wavelengths from string to float
-    try:
-        wavelengths = [float(wl) for wl in wavelengths_str]
-    except ValueError:
-        gs.fatal(_("Invalid wavelength values. Use comma-separated numbers "
-                   "(e.g., 450,550,670,800)"))
     
     # Verify input bands match wavelengths
     if len(input_bands) != len(wavelengths):

@@ -12,7 +12,8 @@ imagery, indices, hyperspectral, vegetation, classification
 ## SYNOPSIS
 
 **i.hyper.indices** **-l** **\--i** **-n**
-**input**=*name\[,name,\...\]* **wavelengths**=*string*
+\[**input**=*name\[,name,\...\]*\] \[**wavelengths**=*string*\]
+\[**input3d**=*name*\] \[**band_wavelengths**=*string*\]
 **output_prefix**=*string* \[**indices**=*string*\]
 \[**theme**=*string*\]
 
@@ -37,12 +38,23 @@ organization.
 
 ### Parameters:
 
-**input**=*name\[,name,\...\]* *(required)*
-:   Input raster bands (comma-separated list)
+**input**=*name\[,name,\...\]*
+:   Input raster bands (comma-separated list). Required unless
+    **input3d** is set.
 
-**wavelengths**=*string* *(required)*
+**wavelengths**=*string*
 :   Wavelengths for input bands in nm (comma-separated, e.g.,
-    450,550,670,800)
+    450,550,670,800). Required with **input**.
+
+**input3d**=*name*
+:   Input 3D raster whose Z-slices are the spectral bands. Each slice
+    is extracted in bulk using `Rast3d_extract_z_slice()` (tile-based
+    reads with `RASTER3D_NO_CACHE`), which is significantly faster than
+    per-voxel access. Mutually exclusive with **input**.
+
+**band_wavelengths**=*string*
+:   Wavelengths in nm for each Z-slice of **input3d** (comma-separated,
+    bottom slice first). Required with **input3d**.
 
 **output_prefix**=*string* *(required)*
 :   Prefix for output index rasters
@@ -81,6 +93,18 @@ organization.
                     wavelengths=490,560,665,865,1600 \
                     output_prefix=marine \
                     indices=PLASTIC,PDI,MPDI
+
+    # Calculate vegetation indices from a 3D hyperspectral raster (bands as Z-slices)
+    i.hyper.indices input3d=hyper_cube \
+                    band_wavelengths=450,490,550,665,705,740,783,842,865,945 \
+                    output_prefix=field \
+                    theme=vegetation
+
+    # Calculate all indices from a 3D raster with normalization
+    i.hyper.indices -n input3d=hyper_cube \
+                    band_wavelengths=450,490,550,665,705,740,783,842 \
+                    output_prefix=crop \
+                    indices=all
 :::
 
 ## THEMES
@@ -102,6 +126,14 @@ organization.
 -   Normalization to 0-1 range where applicable (-n flag)
 -   Graceful handling of missing spectral bands
 -   Dynamic r.mapcalc expression generation
+-   3D input: slices are extracted via `Rast3d_extract_z_slice()` from
+    `libgrass_raster3d`, opened with `RASTER3D_NO_CACHE` so
+    `Rast3d_get_block()` uses the tile-bulk path — each tile is read
+    exactly once rather than once per voxel
+-   Temporary 2D rasters created during 3D extraction are removed
+    automatically on exit
+-   Either **input**/**wavelengths** or **input3d**/**band_wavelengths**
+    must be provided, but not both
 
 ## AUTHOR
 

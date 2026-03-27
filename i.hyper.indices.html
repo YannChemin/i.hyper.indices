@@ -19,7 +19,9 @@ imagery, indices, hyperspectral, vegetation, classification
 <h2>SYNOPSIS</h2>
 <b>i.hyper.indices</b>
 <b>-l</b>  <b>--i</b>  <b>-n</b>
- <b>input</b>=<i>name[,name,...]</i>   <b>wavelengths</b>=<i>string</i>   <b>output_prefix</b>=<i>string</i>
+ [<b>input</b>=<i>name[,name,...]</i>]  [<b>wavelengths</b>=<i>string</i>]
+ [<b>input3d</b>=<i>name</i>]  [<b>band_wavelengths</b>=<i>string</i>]
+ <b>output_prefix</b>=<i>string</i>
  [<b>indices</b>=<i>string</i>] [<b>theme</b>=<i>string</i>]
 
 <h2>DESCRIPTION</h2>
@@ -43,11 +45,22 @@ Supports wavelength-based automatic band matching with thematic organization.
 
 <h3>Parameters:</h3>
 <dl>
-<dt><b>input</b>=<i>name[,name,...]</i> <i>(required)</i></dt>
-<dd>Input raster bands (comma-separated list)</dd>
+<dt><b>input</b>=<i>name[,name,...]</i></dt>
+<dd>Input raster bands (comma-separated list). Required unless <b>input3d</b> is set.</dd>
 
-<dt><b>wavelengths</b>=<i>string</i> <i>(required)</i></dt>
-<dd>Wavelengths for input bands in nm (comma-separated, e.g., 450,550,670,800)</dd>
+<dt><b>wavelengths</b>=<i>string</i></dt>
+<dd>Wavelengths for input bands in nm (comma-separated, e.g., 450,550,670,800).
+Required with <b>input</b>.</dd>
+
+<dt><b>input3d</b>=<i>name</i></dt>
+<dd>Input 3D raster whose Z-slices are the spectral bands. Each slice is extracted
+in bulk using <tt>Rast3d_extract_z_slice()</tt> (tile-based reads with
+<tt>RASTER3D_NO_CACHE</tt>), which is significantly faster than per-voxel access.
+Mutually exclusive with <b>input</b>.</dd>
+
+<dt><b>band_wavelengths</b>=<i>string</i></dt>
+<dd>Wavelengths in nm for each Z-slice of <b>input3d</b> (comma-separated, bottom
+slice first). Required with <b>input3d</b>.</dd>
 
 <dt><b>output_prefix</b>=<i>string</i> <i>(required)</i></dt>
 <dd>Prefix for output index rasters</dd>
@@ -86,6 +99,18 @@ i.hyper.indices input=coastal_bands \
                 wavelengths=490,560,665,865,1600 \
                 output_prefix=marine \
                 indices=PLASTIC,PDI,MPDI
+
+<em># Calculate vegetation indices from a 3D hyperspectral raster (bands as Z-slices)</em>
+i.hyper.indices input3d=hyper_cube \
+                band_wavelengths=450,490,550,665,705,740,783,842,865,945 \
+                output_prefix=field \
+                theme=vegetation
+
+<em># Calculate all indices from a 3D raster with normalization</em>
+i.hyper.indices -n input3d=hyper_cube \
+                band_wavelengths=450,490,550,665,705,740,783,842 \
+                output_prefix=crop \
+                indices=all
 </pre></div>
 
 <h2>THEMES</h2>
@@ -107,6 +132,14 @@ i.hyper.indices input=coastal_bands \
 <li>Normalization to 0-1 range where applicable (-n flag)</li>
 <li>Graceful handling of missing spectral bands</li>
 <li>Dynamic r.mapcalc expression generation</li>
+<li>3D input: slices are extracted via <tt>Rast3d_extract_z_slice()</tt> from
+<tt>libgrass_raster3d</tt>, opened with <tt>RASTER3D_NO_CACHE</tt> so
+<tt>Rast3d_get_block()</tt> uses the tile-bulk path — each tile is read
+exactly once rather than once per voxel</li>
+<li>Temporary 2D rasters created during 3D extraction are removed automatically
+on exit</li>
+<li>Either <b>input</b>/<b>wavelengths</b> or <b>input3d</b>/<b>band_wavelengths</b>
+must be provided, but not both</li>
 </ul>
 
 <h2>AUTHOR</h2>
