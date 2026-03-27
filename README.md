@@ -14,6 +14,9 @@
 - **Automatic Band Matching** - provides wavelengths, gets best spectral matches
 - **Thematic Organization** - vegetation, water, pigments, stress, materials, etc.
 - **GRASS Native** - uses `r.mapcalc`, color tables, full integration
+- **3D Raster Input** - accepts a hyperspectral cube (`input3d=`) and extracts
+  Z-slices in bulk via `Rast3d_extract_z_slice()` (`RASTER3D_NO_CACHE` +
+  `Rast3d_get_block()`), each tile read exactly once instead of per-voxel
 - **Normalization Support** - scales to 0-1 range (-n flag)
 - **Robust Error Handling** - skips unavailable bands with warnings
 
@@ -42,10 +45,10 @@ g.extension i.hyper.indices
 # 1. List all 86+ indices by theme
 i.hyper.indices -l
 
-# 2. Calculate NDVI (default)
+# 2. Calculate NDVI from 2D bands
 i.hyper.indices input=b_red,b_nir wavelengths=665,850 output_prefix=my_ndvi
 
-# 3. All vegetation indices (normalized)
+# 3. All vegetation indices from 2D bands (normalized)
 i.hyper.indices -n input=b1,b2,b3,b4,b5 \
     wavelengths=480,560,665,705,842 \
     output_prefix=forest theme=vegetation
@@ -54,24 +57,39 @@ i.hyper.indices -n input=b1,b2,b3,b4,b5 \
 i.hyper.indices input=coastal_b1,b4,b8,b12 \
     wavelengths=490,665,865,1600 \
     output_prefix=marine indices=PLASTIC,PDI,FPI
+
+# 5. Vegetation indices from a 3D hyperspectral cube (bands as Z-slices)
+i.hyper.indices input3d=hyper_cube \
+    band_wavelengths=450,490,550,665,705,740,783,842,865,945 \
+    output_prefix=field theme=vegetation
+
+# 6. All indices from a 3D cube with normalization
+i.hyper.indices -n input3d=hyper_cube \
+    band_wavelengths=450,490,550,665,705,740,783,842 \
+    output_prefix=crop indices=all
 ```
 
 ## Full Usage
 
-# Key Parameters:
-```bash
-    input: comma-separated raster bands
-    wavelengths: corresponding wavelengths in nm
-    output_prefix: prefix for output rasters
-    indices or theme: specific indices or theme name
-```
+### Key Parameters
 
-# Flags:
-```bash
-    -l: list indices
-    -i: detailed index info
-    -n: normalize to 0-1 range
-```
+| Parameter | Description |
+|-----------|-------------|
+| `input` | Comma-separated 2D raster bands. Required unless `input3d` is set. |
+| `wavelengths` | Wavelengths in nm for each band in `input`. |
+| `input3d` | 3D raster whose Z-slices are the spectral bands. Extracted via `Rast3d_extract_z_slice()`. |
+| `band_wavelengths` | Wavelengths in nm for each Z-slice of `input3d` (bottom slice first). |
+| `output_prefix` | Prefix for output rasters. |
+| `indices` | Comma-separated index names, `all`, or a theme name. |
+| `theme` | Calculate all indices from one theme. |
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `-l` | List all available indices by theme |
+| `-i` | Print detailed index information |
+| `-n` | Normalize output to 0–1 range where applicable |
 
 # Example Themes
 |Theme	|Indices	|Applications|
@@ -212,3 +230,4 @@ NDWI - Normalized Difference Water Index
 Total indices available: 77
 ======================================================================
 ```
+
