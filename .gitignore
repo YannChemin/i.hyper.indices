@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+
+# GRASS Module.make build tree
+OBJ.*/
+build/
+*.o
+*.so
+
+# Debian build artefacts
+debian/.debhelper/
+debian/tmp/
+
+# Standalone binary (DEBIAN_BUILD=1)
+i.hyper.*
+!i.hyper.*.py
+!i.hyper.*.html
+!i.hyper.*.md
