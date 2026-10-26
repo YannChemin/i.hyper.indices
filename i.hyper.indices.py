@@ -2475,10 +2475,8 @@ class HyperspectralIndices:
 
         
 
-import grass.script as gs
 from grass.script import mapcalc
 from grass.script.core import run_command
-from grass.exceptions import CalledModuleError
 
 
 def _load_raster3d_lib():
