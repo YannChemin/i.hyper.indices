@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from test_ras3d_common import (
     WYVERN_PATH, TANAGER_PATH,
     skip_without_ras3d, skip_without_wyvern, skip_without_tanager,
-    open_cube_checked, assert_band_valid, install_ras3d_shim, make_wl_sidecar,
+    open_cube_checked, assert_band_valid, install_ras3d_shim, make_wl_sidecar, load_addon
 )
 
 @skip_without_ras3d
@@ -57,8 +57,7 @@ def test_read_all_bands_tanager():
 def test_extract_slices_ras3d(tmp_path):
     install_ras3d_shim()
     os.environ['RAS3D_OUTDIR'] = str(tmp_path)
-    sys.path.insert(0, '/home/yann/dev/i.hyper.indices')
-    import i_hyper_indices
+    i_hyper_indices = load_addon('i.hyper.indices')
     import ras3d
     h, r = open_cube_checked(WYVERN_PATH)
     wl = list(range(r['depths']))
